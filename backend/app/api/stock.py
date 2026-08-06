@@ -5,8 +5,16 @@ from app.services.stock_service import (
     fetch_stock_history,
     fetch_sma,
 )
+from app.services.search_service import search_companies
 
 router = APIRouter(prefix="/stock", tags=["Stock"])
+
+
+
+@router.get("/search")
+def search(query: str):
+    return search_companies(query)
+
 
 
 @router.get("/{ticker}", response_model=StockResponse)
@@ -14,9 +22,11 @@ def get_stock(ticker: str):
     return fetch_stock_data(ticker)
 
 
+
 @router.get("/{ticker}/history")
 def get_stock_history(ticker: str):
     return fetch_stock_history(ticker)
+
 
 
 @router.get("/{ticker}/sma")

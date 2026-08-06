@@ -12,6 +12,15 @@ def fetch_stock_data(ticker: str):
         "current_price": info.get("currentPrice"),
         "currency": info.get("currency"),
         "sector": info.get("sector"),
+
+        # New Company Overview fields
+        "industry": info.get("industry"),
+        "country": info.get("country"),
+        "employees": info.get("fullTimeEmployees"),
+        "market_cap": info.get("marketCap"),
+        "pe_ratio": info.get("trailingPE"),
+        "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+        "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
     }
 
 
@@ -40,10 +49,6 @@ def fetch_sma(ticker: str, period: str = "3mo", window: int = 20):
 
     history = stock.history(period=period)
 
-    print(history.head())
-    print(history.tail())
-    print("Rows:", len(history))
-
     history["SMA"] = history["Close"].rolling(window=window).mean()
 
     data = []
@@ -58,7 +63,5 @@ def fetch_sma(ticker: str, period: str = "3mo", window: int = 20):
             "close": round(float(row["Close"]), 2),
             "sma": round(float(row["SMA"]), 2)
         })
-
-    print("SMA rows:", len(data))
 
     return data
