@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-import Navbar from "../components/Navbar";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import StockCard from "../components/StockCard";
@@ -29,10 +28,12 @@ function Dashboard() {
   });
 
   useEffect(() => {
-    localStorage.setItem("watchlist", JSON.stringify(watchlist));
+    localStorage.setItem(
+      "watchlist",
+      JSON.stringify(watchlist)
+    );
   }, [watchlist]);
 
-  // Debounced search
   useEffect(() => {
     if (input.length < 2) {
       setSuggestions([]);
@@ -52,7 +53,6 @@ function Dashboard() {
     return () => clearTimeout(timer);
   }, [input]);
 
-  // Fetch news only when selected ticker changes
   useEffect(() => {
     async function fetchNews() {
       try {
@@ -91,8 +91,7 @@ function Dashboard() {
   }
 
   return (
-    <>
-      <Navbar />
+    <div className="min-h-screen bg-[#020817]">
 
       <DashboardLayout
         watchlist={
@@ -125,7 +124,7 @@ function Dashboard() {
             <div className="mt-4 flex justify-center">
               <button
                 onClick={addToWatchlist}
-                className="rounded-lg bg-yellow-500 px-5 py-2 font-semibold text-black transition hover:bg-yellow-400"
+                className="rounded-lg bg-yellow-500 px-5 py-2 font-semibold text-black shadow-lg transition hover:bg-yellow-400"
               >
                 ⭐ Add to Watchlist
               </button>
@@ -135,8 +134,11 @@ function Dashboard() {
 
         stockCard={
           loading ? (
-            <div className="rounded-xl bg-slate-800 p-8 text-center text-white">
-              Loading...
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-8 text-center text-white shadow-xl backdrop-blur-xl">
+              <div className="flex items-center justify-center gap-3">
+                <span className="h-3 w-3 animate-pulse rounded-full bg-cyan-400" />
+                Loading market data...
+              </div>
             </div>
           ) : stock ? (
             <StockCard stock={stock} />
@@ -153,10 +155,19 @@ function Dashboard() {
         }
       />
 
-      <div className="mx-auto max-w-[1500px] px-8 pb-10">
-        <News articles={news} />
-      </div>
-    </>
+      {/* ================= LATEST NEWS ================= */}
+
+      <section className="relative z-10 mx-auto max-w-[1500px] px-8 pb-12">
+
+        <div className="mt-8">
+
+          <News articles={news} />
+
+        </div>
+
+      </section>
+
+    </div>
   );
 }
 
