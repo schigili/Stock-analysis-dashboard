@@ -16,6 +16,13 @@ export async function getSMA(ticker: string) {
 }
 
 export async function searchStocks(query: string) {
-  const response = await api.get(`/stock/search?query=${query}`);
+  const response = await api.get(
+    `/stock/search?query=${encodeURIComponent(query)}`
+  );
+  return response.data;
+}
+
+export async function getStockNews(ticker: string) {
+  const response = await api.get(`/stock/news/${ticker}`);
   return response.data;
 }

@@ -6,11 +6,13 @@ import SearchBar from "../components/SearchBar";
 import StockCard from "../components/StockCard";
 import StockChart from "../components/StockChart";
 import Watchlist from "../components/Watchlist";
+import News from "../components/News";
 
-import { searchStocks } from "../services/stockService";
+import { searchStocks, getStockNews } from "../services/stockService";
 import { useStockData } from "../hooks/useStockData";
 
 import type { SearchResult } from "../types/search";
+import type { NewsArticle } from "../types/news";
 
 function Dashboard() {
   const [input, setInput] = useState("AAPL");
@@ -19,6 +21,7 @@ function Dashboard() {
   const { stock, history, loading } = useStockData(ticker);
 
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
+  const [news, setNews] = useState<NewsArticle[]>([]);
 
   const [watchlist, setWatchlist] = useState<string[]>(() => {
     const saved = localStorage.getItem("watchlist");
@@ -29,23 +32,49 @@ function Dashboard() {
     localStorage.setItem("watchlist", JSON.stringify(watchlist));
   }, [watchlist]);
 
+  // Debounced search
   useEffect(() => {
-    async function fetchSuggestions() {
-      if (input.length < 2) {
-        setSuggestions([]);
-        return;
-      }
+    if (input.length < 2) {
+      setSuggestions([]);
+      return;
+    }
 
+    const timer = setTimeout(async () => {
       try {
         const data = await searchStocks(input);
         setSuggestions(data);
       } catch (error) {
-        console.error(error);
+        console.error("Search error:", error);
+        setSuggestions([]);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [input]);
+
+  // Fetch news only when selected ticker changes
+  useEffect(() => {
+    async function fetchNews() {
+      try {
+        const data = await getStockNews(ticker);
+        setNews(data);
+      } catch (error) {
+        console.error("News error:", error);
+        setNews([]);
       }
     }
 
-    fetchSuggestions();
-  }, [input]);
+    fetchNews();
+  }, [ticker]);
+
+  function handleSearch() {
+    const symbol = input.trim().toUpperCase();
+
+    if (!symbol) return;
+
+    setTicker(symbol);
+    setSuggestions([]);
+  }
 
   function addToWatchlist() {
     if (!ticker) return;
@@ -72,16 +101,18 @@ function Dashboard() {
             onSelect={(symbol) => {
               setInput(symbol);
               setTicker(symbol);
+              setSuggestions([]);
             }}
             onRemove={removeFromWatchlist}
           />
         }
+
         search={
           <>
             <SearchBar
               input={input}
               setInput={setInput}
-              onSearch={() => setTicker(input)}
+              onSearch={handleSearch}
               suggestions={suggestions}
               onSelect={(symbol) => {
                 setInput(symbol);
@@ -94,13 +125,14 @@ function Dashboard() {
             <div className="mt-4 flex justify-center">
               <button
                 onClick={addToWatchlist}
-                className="rounded-lg bg-yellow-500 px-5 py-2 font-semibold text-black hover:bg-yellow-400 transition"
+                className="rounded-lg bg-yellow-500 px-5 py-2 font-semibold text-black transition hover:bg-yellow-400"
               >
                 ⭐ Add to Watchlist
               </button>
             </div>
           </>
         }
+
         stockCard={
           loading ? (
             <div className="rounded-xl bg-slate-800 p-8 text-center text-white">
@@ -110,6 +142,7 @@ function Dashboard() {
             <StockCard stock={stock} />
           ) : null
         }
+
         chart={
           history.length > 0 ? (
             <StockChart
@@ -119,6 +152,10 @@ function Dashboard() {
           ) : null
         }
       />
+
+      <div className="mx-auto max-w-[1500px] px-8 pb-10">
+        <News articles={news} />
+      </div>
     </>
   );
 }

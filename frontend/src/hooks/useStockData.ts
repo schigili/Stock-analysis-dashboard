@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import type { StockResponse } from "../types/stock";
 import type { HistoryData } from "../types/history";
 
@@ -14,30 +15,40 @@ export function useStockData(ticker: string) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!ticker) return;
+
     async function fetchData() {
       setLoading(true);
 
       try {
-        const stockData = await getStock(ticker);
-        const historyData = await getHistory(ticker);
-        const smaData = await getSMA(ticker);
+        const [stockData, historyData, smaData] =
+          await Promise.all([
+            getStock(ticker),
+            getHistory(ticker),
+            getSMA(ticker),
+          ]);
 
-        const mergedHistory = historyData.map((day: HistoryData) => {
-          const sma = smaData.find(
-            (item: any) => item.date === day.date
-          );
+        const mergedHistory: HistoryData[] = historyData.map(
+          (day: HistoryData) => {
+            const sma = smaData.find(
+              (item: { date: string; sma: number }) =>
+                item.date === day.date
+            );
 
-          return {
-            ...day,
-            sma: sma?.sma,
-          };
-        });
+            return {
+              ...day,
+              sma: sma?.sma,
+            };
+          }
+        );
 
         setStock(stockData);
         setHistory(mergedHistory);
 
       } catch (error) {
-        console.error(error);
+        console.error("Error fetching stock data:", error);
+        setStock(null);
+        setHistory([]);
       } finally {
         setLoading(false);
       }
