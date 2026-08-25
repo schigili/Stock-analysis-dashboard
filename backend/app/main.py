@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.stock import router as stock_router
 
+
 app = FastAPI(
     title="Stock Analysis Dashboard API",
     version="1.0.0"
 )
+
 
 # CORS
 app.add_middleware(
@@ -14,12 +16,15 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://finvue-eta.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# Stock API routes
 app.include_router(stock_router)
 
 
