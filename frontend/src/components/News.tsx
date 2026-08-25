@@ -1,4 +1,4 @@
-import type { NewsArticle } from "../types/news";
+import type { NewsArticle } from "../types/News";
 
 interface NewsProps {
   articles: NewsArticle[];

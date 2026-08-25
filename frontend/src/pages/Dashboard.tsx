@@ -11,8 +11,7 @@ import { searchStocks, getStockNews } from "../services/stockService";
 import { useStockData } from "../hooks/useStockData";
 
 import type { SearchResult } from "../types/search";
-import type { NewsArticle } from "../types/news";
-
+import type { NewsArticle } from "../types/News";
 function Dashboard() {
   const [input, setInput] = useState("AAPL");
   const [ticker, setTicker] = useState("AAPL");
