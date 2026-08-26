@@ -3,17 +3,38 @@ import pandas as pd
 
 
 def fetch_stock_data(ticker: str):
-    stock = yf.Ticker(ticker.upper())
-    info = stock.info
+    ticker = ticker.upper().strip()
+    stock = yf.Ticker(ticker)
+
+    # Start with safe defaults
+    info = {}
+
+    # Yahoo Finance metadata can occasionally fail or timeout.
+    # Do not let that make the entire stock endpoint return 500.
+    try:
+        info = stock.info or {}
+    except Exception:
+        info = {}
+
+    # Get current price from metadata first.
+    current_price = info.get("currentPrice")
+
+    # Fallback to recent market data if currentPrice is unavailable.
+    if current_price is None:
+        try:
+            history = stock.history(period="5d")
+
+            if not history.empty:
+                current_price = float(history["Close"].dropna().iloc[-1])
+        except Exception:
+            current_price = None
 
     return {
-        "ticker": ticker.upper(),
-        "company": info.get("longName"),
-        "current_price": info.get("currentPrice"),
-        "currency": info.get("currency"),
+        "ticker": ticker,
+        "company": info.get("longName") or info.get("shortName") or ticker,
+        "current_price": current_price,
+        "currency": info.get("currency") or "USD",
         "sector": info.get("sector"),
-
-        # New Company Overview fields
         "industry": info.get("industry"),
         "country": info.get("country"),
         "employees": info.get("fullTimeEmployees"),
@@ -25,7 +46,8 @@ def fetch_stock_data(ticker: str):
 
 
 def fetch_stock_history(ticker: str, period: str = "1mo"):
-    stock = yf.Ticker(ticker.upper())
+    ticker = ticker.upper().strip()
+    stock = yf.Ticker(ticker)
 
     history = stock.history(period=period)
 
@@ -45,9 +67,13 @@ def fetch_stock_history(ticker: str, period: str = "1mo"):
 
 
 def fetch_sma(ticker: str, period: str = "3mo", window: int = 20):
-    stock = yf.Ticker(ticker.upper())
+    ticker = ticker.upper().strip()
+    stock = yf.Ticker(ticker)
 
     history = stock.history(period=period)
+
+    if history.empty:
+        return []
 
     history["SMA"] = history["Close"].rolling(window=window).mean()
 
