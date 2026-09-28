@@ -16,7 +16,7 @@ function Dashboard() {
   const [input, setInput] = useState("AAPL");
   const [ticker, setTicker] = useState("AAPL");
 
-  const { stock, history, loading } = useStockData(ticker);
+  const { stock, history, loading, error } = useStockData(ticker);
 
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [news, setNews] = useState<NewsArticle[]>([]);
@@ -34,31 +34,45 @@ function Dashboard() {
   }, [watchlist]);
 
   useEffect(() => {
-    if (input.length < 2) {
+    const query = input.trim();
+
+    if (
+      query.length < 2 ||
+      query.toUpperCase() === ticker.toUpperCase()
+    ) {
       setSuggestions([]);
       return;
     }
 
+    let isCancelled = false;
+
     const timer = setTimeout(async () => {
       try {
-        const data = await searchStocks(input);
-        setSuggestions(data);
-      } catch (error) {
-        console.error("Search error:", error);
-        setSuggestions([]);
+        const data = await searchStocks(query);
+        if (!isCancelled) {
+          setSuggestions(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          console.error("Search error:", err);
+          setSuggestions([]);
+        }
       }
     }, 400);
 
-    return () => clearTimeout(timer);
-  }, [input]);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [input, ticker]);
 
   useEffect(() => {
     async function fetchNews() {
       try {
         const data = await getStockNews(ticker);
         setNews(data);
-      } catch (error) {
-        console.error("News error:", error);
+      } catch (err) {
+        console.error("News error:", err);
         setNews([]);
       }
     }
@@ -66,13 +80,38 @@ function Dashboard() {
     fetchNews();
   }, [ticker]);
 
-  function handleSearch() {
-    const symbol = input.trim().toUpperCase();
+  function selectSymbol(symbol: string) {
+    const normalized = symbol.trim().toUpperCase();
+    if (!normalized) return;
 
-    if (!symbol) return;
-
-    setTicker(symbol);
+    setInput(normalized);
+    setTicker(normalized);
     setSuggestions([]);
+  }
+
+  function handleSearch() {
+    const query = input.trim();
+
+    if (!query) return;
+
+    const upperQuery = query.toUpperCase();
+    const exactSymbol = suggestions.find(
+      (item) => item.symbol.toUpperCase() === upperQuery
+    );
+    const matchingSuggestion =
+      exactSymbol ??
+      suggestions.find(
+        (item) =>
+          item.symbol.toLowerCase().includes(query.toLowerCase()) ||
+          item.name.toLowerCase().includes(query.toLowerCase())
+      ) ??
+      suggestions[0];
+
+    const symbol = matchingSuggestion
+      ? matchingSuggestion.symbol.toUpperCase()
+      : upperQuery;
+
+    selectSymbol(symbol);
   }
 
   function addToWatchlist() {
@@ -96,11 +135,7 @@ function Dashboard() {
         watchlist={
           <Watchlist
             stocks={watchlist}
-            onSelect={(symbol) => {
-              setInput(symbol);
-              setTicker(symbol);
-              setSuggestions([]);
-            }}
+            onSelect={selectSymbol}
             onRemove={removeFromWatchlist}
           />
         }
@@ -112,11 +147,7 @@ function Dashboard() {
               setInput={setInput}
               onSearch={handleSearch}
               suggestions={suggestions}
-              onSelect={(symbol) => {
-                setInput(symbol);
-                setTicker(symbol);
-                setSuggestions([]);
-              }}
+              onSelect={selectSymbol}
               onClose={() => setSuggestions([])}
             />
 
@@ -141,6 +172,10 @@ function Dashboard() {
             </div>
           ) : stock ? (
             <StockCard stock={stock} />
+          ) : error ? (
+            <div className="rounded-2xl border border-red-500/30 bg-slate-900/70 p-8 text-center text-red-400 shadow-xl backdrop-blur-xl">
+              {error}
+            </div>
           ) : null
         }
 

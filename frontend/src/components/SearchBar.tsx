@@ -58,6 +58,7 @@ function SearchBar({
           />
 
           <button
+            type="button"
             onClick={onSearch}
             className="rounded-lg bg-blue-600 px-5 py-3 text-white hover:bg-blue-700 transition"
           >
@@ -69,6 +70,7 @@ function SearchBar({
           <div className="absolute z-50 mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 shadow-xl">
             {suggestions.map((item) => (
               <button
+                type="button"
                 key={item.symbol}
                 onClick={() => onSelect(item.symbol)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left text-white hover:bg-slate-700"

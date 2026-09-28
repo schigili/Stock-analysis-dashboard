@@ -543,7 +543,7 @@ function DashboardLayout({
 
               {/* SEARCH */}
 
-              <section className="mb-6 rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-2xl backdrop-blur-xl">
+              <section className="relative z-30 mb-6 rounded-2xl border border-white/10 bg-slate-900/60 p-4 shadow-2xl backdrop-blur-xl">
 
                 {search}
 

@@ -1,14 +1,96 @@
+import os
 import time
 
 import pandas as pd
+import requests
 import yfinance as yf
+from dotenv import load_dotenv
 
 
-def _get_info_safely(stock):
+load_dotenv()
+
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
+
+
+def fetch_alpha_vantage_overview(ticker: str):
     """
-    Safely retrieve Yahoo Finance company metadata.
-    Yahoo can occasionally fail or return incomplete metadata,
-    so we retry once before giving up.
+    Fetch company fundamentals from Alpha Vantage.
+    Returns an empty dictionary if the request fails.
+    """
+
+    if not ALPHA_VANTAGE_API_KEY:
+        return {}
+
+    try:
+        response = requests.get(
+            ALPHA_VANTAGE_URL,
+            params={
+                "function": "OVERVIEW",
+                "symbol": ticker,
+                "apikey": ALPHA_VANTAGE_API_KEY,
+            },
+            timeout=15,
+        )
+
+        if response.status_code != 200:
+            return {}
+
+        data = response.json()
+
+        # Alpha Vantage may return an error/note instead of company data.
+        if not data or "Symbol" not in data:
+            return {}
+
+        return data
+
+    except Exception:
+        return {}
+
+
+def safe_float(value):
+    """
+    Convert a value to float safely.
+    """
+    try:
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if value in ("", "None", "null", "N/A", "-"):
+                return None
+
+        return float(value)
+
+    except (ValueError, TypeError):
+        return None
+
+
+def safe_int(value):
+    """
+    Convert a value to integer safely.
+    """
+    try:
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if value in ("", "None", "null", "N/A", "-"):
+                return None
+
+        return int(float(value))
+
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_yfinance_info(stock):
+    """
+    Safely retrieve Yahoo Finance metadata.
     """
     for attempt in range(2):
         try:
@@ -24,9 +106,9 @@ def _get_info_safely(stock):
     return {}
 
 
-def _get_fast_info_safely(stock):
+def _get_fast_info(stock):
     """
-    Safely retrieve Yahoo Finance fast market information.
+    Safely retrieve Yahoo Finance fast market data.
     """
     try:
         return stock.fast_info
@@ -39,11 +121,18 @@ def fetch_stock_data(ticker: str):
 
     stock = yf.Ticker(ticker)
 
-    # Company metadata
-    info = _get_info_safely(stock)
+    # ---------------------------------------------------------
+    # Yahoo Finance data
+    # ---------------------------------------------------------
 
-    # Fast market information
-    fast_info = _get_fast_info_safely(stock)
+    yahoo_info = _get_yfinance_info(stock)
+    fast_info = _get_fast_info(stock)
+
+    # ---------------------------------------------------------
+    # Alpha Vantage fundamentals
+    # ---------------------------------------------------------
+
+    alpha_info = fetch_alpha_vantage_overview(ticker)
 
     # ---------------------------------------------------------
     # Current Price
@@ -58,9 +147,14 @@ def fetch_stock_data(ticker: str):
             current_price = None
 
     if current_price is None:
-        current_price = info.get("currentPrice")
+        current_price = yahoo_info.get("currentPrice")
 
-    # Final fallback: recent historical close
+    if current_price is None:
+        current_price = safe_float(
+            alpha_info.get("Price")
+        )
+
+    # Final fallback to historical data
     if current_price is None:
         try:
             history = stock.history(period="5d")
@@ -74,67 +168,146 @@ def fetch_stock_data(ticker: str):
             current_price = None
 
     # ---------------------------------------------------------
+    # Company
+    # ---------------------------------------------------------
+
+    company = (
+        alpha_info.get("Name")
+        or yahoo_info.get("longName")
+        or yahoo_info.get("shortName")
+        or ticker
+    )
+
+    # ---------------------------------------------------------
     # Currency
     # ---------------------------------------------------------
 
-    currency = info.get("currency")
+    currency = (
+        alpha_info.get("Currency")
+        or yahoo_info.get("currency")
+        or "USD"
+    )
 
-    if not currency and fast_info is not None:
-        try:
-            currency = fast_info.get("currency")
-        except Exception:
-            currency = None
+    # ---------------------------------------------------------
+    # Sector
+    # ---------------------------------------------------------
 
-    currency = currency or "USD"
+    sector = (
+        alpha_info.get("Sector")
+        or yahoo_info.get("sector")
+    )
+
+    # ---------------------------------------------------------
+    # Industry
+    # ---------------------------------------------------------
+
+    industry = (
+        alpha_info.get("Industry")
+        or yahoo_info.get("industry")
+    )
+
+    # ---------------------------------------------------------
+    # Country
+    # ---------------------------------------------------------
+
+    country = (
+        alpha_info.get("Country")
+        or yahoo_info.get("country")
+    )
+
+    # ---------------------------------------------------------
+    # Employees
+    # ---------------------------------------------------------
+
+    employees = safe_int(
+        alpha_info.get("FullTimeEmployees")
+    )
+
+    if employees is None:
+        employees = safe_int(
+            yahoo_info.get("fullTimeEmployees")
+        )
 
     # ---------------------------------------------------------
     # Market Cap
     # ---------------------------------------------------------
 
-    market_cap = info.get("marketCap")
+    market_cap = safe_int(
+        alpha_info.get("MarketCapitalization")
+    )
+
+    if market_cap is None:
+        market_cap = safe_int(
+            yahoo_info.get("marketCap")
+        )
 
     if market_cap is None and fast_info is not None:
         try:
-            market_cap = fast_info.get("market_cap")
+            market_cap = safe_int(
+                fast_info.get("market_cap")
+                if hasattr(fast_info, "get")
+                else getattr(fast_info, "market_cap", None)
+            )
         except Exception:
-            market_cap = None
+            pass
 
     # ---------------------------------------------------------
-    # 52 Week High / Low
+    # P/E Ratio
     # ---------------------------------------------------------
 
-    fifty_two_week_high = info.get("fiftyTwoWeekHigh")
+    pe_ratio = safe_float(
+        alpha_info.get("PERatio")
+    )
+
+    if pe_ratio is None:
+        pe_ratio = safe_float(
+            yahoo_info.get("trailingPE")
+        )
+
+    # ---------------------------------------------------------
+    # 52 Week High
+    # ---------------------------------------------------------
+
+    fifty_two_week_high = safe_float(
+        alpha_info.get("52WeekHigh")
+    )
+
+    if fifty_two_week_high is None:
+        fifty_two_week_high = safe_float(
+            yahoo_info.get("fiftyTwoWeekHigh")
+        )
 
     if fifty_two_week_high is None and fast_info is not None:
         try:
-            fifty_two_week_high = fast_info.get(
-                "year_high"
+            fifty_two_week_high = safe_float(
+                fast_info.get("year_high")
             )
         except Exception:
-            fifty_two_week_high = None
+            pass
 
-    fifty_two_week_low = info.get("fiftyTwoWeekLow")
+    # ---------------------------------------------------------
+    # 52 Week Low
+    # ---------------------------------------------------------
+
+    fifty_two_week_low = safe_float(
+        alpha_info.get("52WeekLow")
+    )
+
+    if fifty_two_week_low is None:
+        fifty_two_week_low = safe_float(
+            yahoo_info.get("fiftyTwoWeekLow")
+        )
 
     if fifty_two_week_low is None and fast_info is not None:
         try:
-            fifty_two_week_low = fast_info.get(
-                "year_low"
+            fifty_two_week_low = safe_float(
+                fast_info.get("year_low")
             )
         except Exception:
-            fifty_two_week_low = None
+            pass
 
     # ---------------------------------------------------------
-    # Company Name
-    # ---------------------------------------------------------
-
-    company = (
-        info.get("longName")
-        or info.get("shortName")
-        or ticker
-    )
-
-    # ---------------------------------------------------------
-    # Return Stock Data
+    # Return final response
     # ---------------------------------------------------------
 
     return {
@@ -142,38 +315,41 @@ def fetch_stock_data(ticker: str):
         "company": company,
 
         "current_price": (
-            round(float(current_price), 2)
+            round(current_price, 2)
             if current_price is not None
             else None
         ),
 
         "currency": currency,
 
-        "sector": info.get("sector"),
-        "industry": info.get("industry"),
-        "country": info.get("country"),
+        "sector": sector,
+        "industry": industry,
+        "country": country,
 
-        "employees": info.get("fullTimeEmployees"),
+        "employees": employees,
 
         "market_cap": market_cap,
 
-        "pe_ratio": info.get("trailingPE"),
+        "pe_ratio": pe_ratio,
 
         "fifty_two_week_high": (
-            round(float(fifty_two_week_high), 2)
+            round(fifty_two_week_high, 2)
             if fifty_two_week_high is not None
             else None
         ),
 
         "fifty_two_week_low": (
-            round(float(fifty_two_week_low), 2)
+            round(fifty_two_week_low, 2)
             if fifty_two_week_low is not None
             else None
         ),
     }
 
 
-def fetch_stock_history(ticker: str, period: str = "1mo"):
+def fetch_stock_history(
+    ticker: str,
+    period: str = "1mo"
+):
     ticker = ticker.upper().strip()
 
     stock = yf.Ticker(ticker)
