@@ -116,6 +116,59 @@ def _get_fast_info(stock):
         return None
 
 
+def _read_fast_info(fast_info, attr_name: str, camel_key: str):
+    """
+    Safely read a field from yfinance FastInfo via attribute or camelCase/snake_case key.
+    """
+    if fast_info is None:
+        return None
+
+    for getter in (
+        lambda: getattr(fast_info, attr_name, None),
+        lambda: fast_info.get(camel_key) if hasattr(fast_info, "get") else None,
+        lambda: fast_info.get(attr_name) if hasattr(fast_info, "get") else None,
+        lambda: fast_info[camel_key],
+        lambda: fast_info[attr_name],
+    ):
+        try:
+            val = getter()
+            if val is not None:
+                return val
+        except Exception:
+            continue
+
+    return None
+
+
+def _get_yahoo_search_metadata(ticker: str):
+    """
+    Fallback metadata lookup via Yahoo Finance search API (reliable on cloud IPs).
+    Returns company name, sector, and industry when stock.info is rate-limited.
+    """
+    try:
+        response = requests.get(
+            "https://query2.finance.yahoo.com/v1/finance/search",
+            params={
+                "q": ticker,
+                "quotesCount": 5,
+                "newsCount": 0,
+            },
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return {}
+
+        quotes = response.json().get("quotes", [])
+        for item in quotes:
+            if str(item.get("symbol", "")).upper() == ticker.upper():
+                return item
+
+        return quotes[0] if quotes else {}
+    except Exception:
+        return {}
+
+
 def fetch_stock_data(ticker: str):
     ticker = ticker.upper().strip()
 
@@ -135,19 +188,27 @@ def fetch_stock_data(ticker: str):
     alpha_info = fetch_alpha_vantage_overview(ticker)
 
     # ---------------------------------------------------------
+    # Yahoo Search fallback (when company/sector/industry are missing)
+    # ---------------------------------------------------------
+
+    search_meta = {}
+    if not (
+        (alpha_info.get("Name") or yahoo_info.get("longName") or yahoo_info.get("shortName"))
+        and (alpha_info.get("Sector") or yahoo_info.get("sector"))
+        and (alpha_info.get("Industry") or yahoo_info.get("industry"))
+    ):
+        search_meta = _get_yahoo_search_metadata(ticker)
+
+    # ---------------------------------------------------------
     # Current Price
     # ---------------------------------------------------------
 
-    current_price = None
-
-    if fast_info is not None:
-        try:
-            current_price = fast_info.get("last_price")
-        except Exception:
-            current_price = None
+    current_price = safe_float(
+        _read_fast_info(fast_info, "last_price", "lastPrice")
+    )
 
     if current_price is None:
-        current_price = yahoo_info.get("currentPrice")
+        current_price = safe_float(yahoo_info.get("currentPrice"))
 
     if current_price is None:
         current_price = safe_float(
@@ -175,6 +236,8 @@ def fetch_stock_data(ticker: str):
         alpha_info.get("Name")
         or yahoo_info.get("longName")
         or yahoo_info.get("shortName")
+        or search_meta.get("longname")
+        or search_meta.get("shortname")
         or ticker
     )
 
@@ -185,6 +248,7 @@ def fetch_stock_data(ticker: str):
     currency = (
         alpha_info.get("Currency")
         or yahoo_info.get("currency")
+        or _read_fast_info(fast_info, "currency", "currency")
         or "USD"
     )
 
@@ -195,6 +259,8 @@ def fetch_stock_data(ticker: str):
     sector = (
         alpha_info.get("Sector")
         or yahoo_info.get("sector")
+        or search_meta.get("sectorDisp")
+        or search_meta.get("sector")
     )
 
     # ---------------------------------------------------------
@@ -204,15 +270,27 @@ def fetch_stock_data(ticker: str):
     industry = (
         alpha_info.get("Industry")
         or yahoo_info.get("industry")
+        or search_meta.get("industryDisp")
+        or search_meta.get("industry")
     )
 
     # ---------------------------------------------------------
     # Country
     # ---------------------------------------------------------
 
+    exchange = (
+        _read_fast_info(fast_info, "exchange", "exchange")
+        or search_meta.get("exchange")
+    )
+
     country = (
         alpha_info.get("Country")
         or yahoo_info.get("country")
+        or (
+            "United States"
+            if exchange in ("NMS", "NYQ", "NGM", "NCM", "PCX", "ASE", "BTS")
+            else None
+        )
     )
 
     # ---------------------------------------------------------
@@ -241,15 +319,10 @@ def fetch_stock_data(ticker: str):
             yahoo_info.get("marketCap")
         )
 
-    if market_cap is None and fast_info is not None:
-        try:
-            market_cap = safe_int(
-                fast_info.get("market_cap")
-                if hasattr(fast_info, "get")
-                else getattr(fast_info, "market_cap", None)
-            )
-        except Exception:
-            pass
+    if market_cap is None:
+        market_cap = safe_int(
+            _read_fast_info(fast_info, "market_cap", "marketCap")
+        )
 
     # ---------------------------------------------------------
     # P/E Ratio
@@ -277,13 +350,10 @@ def fetch_stock_data(ticker: str):
             yahoo_info.get("fiftyTwoWeekHigh")
         )
 
-    if fifty_two_week_high is None and fast_info is not None:
-        try:
-            fifty_two_week_high = safe_float(
-                fast_info.get("year_high")
-            )
-        except Exception:
-            pass
+    if fifty_two_week_high is None:
+        fifty_two_week_high = safe_float(
+            _read_fast_info(fast_info, "year_high", "yearHigh")
+        )
 
     # ---------------------------------------------------------
     # 52 Week Low
@@ -298,11 +368,20 @@ def fetch_stock_data(ticker: str):
             yahoo_info.get("fiftyTwoWeekLow")
         )
 
-    if fifty_two_week_low is None and fast_info is not None:
+    if fifty_two_week_low is None:
+        fifty_two_week_low = safe_float(
+            _read_fast_info(fast_info, "year_low", "yearLow")
+        )
+
+    # Final fallback for 52W High/Low from 1y history
+    if fifty_two_week_high is None or fifty_two_week_low is None:
         try:
-            fifty_two_week_low = safe_float(
-                fast_info.get("year_low")
-            )
+            year_history = stock.history(period="1y")
+            if not year_history.empty:
+                if fifty_two_week_high is None:
+                    fifty_two_week_high = float(year_history["High"].dropna().max())
+                if fifty_two_week_low is None:
+                    fifty_two_week_low = float(year_history["Low"].dropna().min())
         except Exception:
             pass
 
